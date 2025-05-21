@@ -10,9 +10,11 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 
-device = torch.device('cpu')
-if torch.cuda.is_available():
-    device = torch.device('cuda')
+from tqdm import tqdm
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+print(f'\n{device}')
 
 train_path = "./train"
 val_path = "./test"
@@ -33,9 +35,9 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-train_dataloader = DataLoader(ImageFolder(train_path, transform=transform), batch_size=16, shuffle = True)
+train_dataloader = DataLoader(ImageFolder(train_path, transform=transform), batch_size=8, shuffle = True)
 
-val_dataloader = DataLoader(ImageFolder(val_path, transform=transform), batch_size=16)
+val_dataloader = DataLoader(ImageFolder(val_path, transform=transform), batch_size=8)
 
 model = nn.Sequential(
     nn.Conv2d(1, 32, (3,3)),
@@ -63,27 +65,31 @@ model = nn.Sequential(
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.Adam(model.parameters(), lr = 2e-2)
 
-def train(model, dataloader, loss_fn, optim, epochs = 5):
+def train(model, dataloader, loss_fn, optim, epochs = 1):
     model.train()
 
     for epoch in range(epochs):
         loss_epoch = 0.0
-        print("!!!!!!!!!!!!!!!!!!!!!!!")
+        print(f"Epoch {epoch+1}/{epochs}")
 
-        for inputs, labels in dataloader:
-            optim.zero_grad()
-            outputs = model(inputs)
+        with tqdm(dataloader, desc=f"Epoch {epoch+1}", unit="batch") as pbar:
+            for inputs, labels in pbar:
+                inputs, labels = inputs.to(device), labels.to(device)
 
-            loss = loss_fn(outputs, labels)
-            loss.backward()
-            optim.step()
+                optim.zero_grad()
+                outputs = model(inputs)
 
-            loss_epoch += loss.item()
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optim.step()
 
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {loss_epoch/len(dataloader):.4f}")
+                loss_epoch += loss.item()
+                pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
+            
+        print(f"\nEpoch {epoch+1}/{epochs}, Loss: {loss_epoch/len(dataloader)}\n")
 
 train(model, train_dataloader, loss_fn, optim)
+torch.save(model, 'model.pth')
 
 # torch.save(model, 'model.pth')
 # model = torch.load('model.pth')
-# model.eval()
