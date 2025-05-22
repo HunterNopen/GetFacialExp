@@ -1,3 +1,4 @@
 test/
 train/
-.pth
+*.pth
+*.pyc

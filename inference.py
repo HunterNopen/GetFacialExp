@@ -1,95 +1,99 @@
-import numpy as np
-import cv2
-import os
-import shutil
-import kagglehub
-
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
-
 from tqdm import tqdm
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from dataset_prep import Dataset
 
-print(f'\n{device}')
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-train_path = "./train"
-val_path = "./test"
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f'\n{self.device}')
 
-if not os.path.exists(train_path) and not os.path.exists(val_path):
-    os.environ['KAGGLEHUB_CACHE'] = './'
-    kagglehub.dataset_download("msambare/fer2013")
+        self.backbone = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
 
-    shutil.move("./datasets/msambare/fer2013/versions/1/train", "./")
-    shutil.move("./datasets/msambare/fer2013/versions/1/test", "./")
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Dropout(0.2),
 
-    shutil.rmtree("./datasets")
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
 
-transform = transforms.Compose([
-    transforms.Grayscale(),
-    transforms.Resize((48, 48)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
-])
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Dropout(0.2),
 
-train_dataloader = DataLoader(ImageFolder(train_path, transform=transform), batch_size=8, shuffle = True)
+            nn.Conv2d(256, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
 
-val_dataloader = DataLoader(ImageFolder(val_path, transform=transform), batch_size=8)
+            nn.Conv2d(128, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Dropout(0.2),
+        ).to(self.device)
 
-model = nn.Sequential(
-    nn.Conv2d(1, 32, (3,3)),
-    nn.ReLU(),
-    nn.Conv2d(32, 64, (3,3)),
-    nn.ReLU(),
-    nn.MaxPool2d((2,2)),
-    nn.Dropout(0.2),
+        self.classifier = nn.Sequential(
+            nn.Linear(64 * 6 * 6, 128),
+            nn.ReLU(),
+            nn.Dropout(0.25),
+            nn.Linear(128, 7)
+        ).to(self.device)
 
-    nn.Conv2d(64, 128, (3,3)),
-    nn.ReLU(),
-    nn.Conv2d(128, 128, (3,3)),
-    nn.ReLU(),
-    nn.MaxPool2d((2,2)),
-    nn.Dropout(0.2),
+        self.loss_fn = nn.CrossEntropyLoss()
+        self.optim = torch.optim.AdamW(self.backbone.parameters(), lr = 1e-4)
 
-    nn.Flatten(),
-    nn.Linear(128 * 9 * 9, 1024),
-    nn.ReLU(),
-    nn.Dropout(0.5),
-    nn.Linear(1024, 7),
-    nn.Softmax(dim=1)
-).to(device)
+    def forward(self, x):
+        x = self.backbone(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+    
+        return x
 
-loss_fn = nn.CrossEntropyLoss()
-optim = torch.optim.Adam(model.parameters(), lr = 2e-2)
+    def train_model(self, dataloader, epochs = 10):
+        self.backbone.train()
 
-def train(model, dataloader, loss_fn, optim, epochs = 1):
-    model.train()
+        for epoch in range(epochs):
+            loss_epoch = 0.0
+            print(f"Epoch {epoch+1}/{epochs}")
 
-    for epoch in range(epochs):
-        loss_epoch = 0.0
-        print(f"Epoch {epoch+1}/{epochs}")
+            with tqdm(dataloader, desc=f"Epoch {epoch+1}", unit="batch") as pbar:
+                for inputs, labels in pbar:
+                    inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-        with tqdm(dataloader, desc=f"Epoch {epoch+1}", unit="batch") as pbar:
-            for inputs, labels in pbar:
-                inputs, labels = inputs.to(device), labels.to(device)
+                    self.optim.zero_grad()
+                    outputs = self.forward(inputs)
 
-                optim.zero_grad()
-                outputs = model(inputs)
+                    loss = self.loss_fn(outputs, labels)
+                    loss.backward()
+                    self.optim.step()
 
-                loss = loss_fn(outputs, labels)
-                loss.backward()
-                optim.step()
+                    loss_epoch += loss.item()
+                    pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
+                
+            print(f"\nEpoch {epoch+1}/{epochs}, Loss: {loss_epoch/len(dataloader)}\n")
 
-                loss_epoch += loss.item()
-                pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
-            
-        print(f"\nEpoch {epoch+1}/{epochs}, Loss: {loss_epoch/len(dataloader)}\n")
+if __name__ == "__main__":
+    dataset = Dataset()
+    dataset.setup()
 
-train(model, train_dataloader, loss_fn, optim)
-torch.save(model, 'model.pth')
+    train_dataloader = dataset.get_train_dataloader()
+    print(f'Train Len: {len(train_dataloader)}')
 
-# torch.save(model, 'model.pth')
-# model = torch.load('model.pth')
+    val_dataloadert = dataset.get_val_dataloader()
+    print(f'Val Len: {len(val_dataloadert)}')
+
+    model = Model()
+    model.train_model(train_dataloader)
+
+    torch.save(model.state_dict(), 'model.pth')
