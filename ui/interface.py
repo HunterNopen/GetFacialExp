@@ -1,7 +1,7 @@
 import cv2
 import torch
 from torchvision import transforms
-from inference import Model
+from inference.inference import Model
 import time
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

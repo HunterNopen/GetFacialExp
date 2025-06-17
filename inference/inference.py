@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-from dataset_prep import Dataset
+from inference.dataset_prep import Dataset
 
 class Model(nn.Module):
     def __init__(self):
