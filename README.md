@@ -38,8 +38,8 @@ The project demonstrates the full pipeline for emotion recognition:
 
 ## Results
 
-- **Final Training Loss**: Reduced from ~2.0 to ~0.5
-- **Validation Accuracy**: Achieved approximately 0.85 (85%)
+- **Final Training Loss**: Reduced from ~2.0 to ~0.8
+- **Validation Accuracy**: Achieved ~0.75 (75%)
 - **Inference Speed**: <0.2 seconds per frame on a standard webcam, but implemnted debouncing to ensure smooth video feed
 
 ## Conclusion
