@@ -47,7 +47,6 @@ class EmotionDetector(VideoTransformerBase):
 
 singleton_detector = None
 
-@st.cache_resource
 def init_detector(model, transform, device):
     global singleton_detector
     if singleton_detector is None:
